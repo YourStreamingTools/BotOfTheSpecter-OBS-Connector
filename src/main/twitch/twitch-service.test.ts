@@ -96,6 +96,42 @@ describe('TwitchService', () => {
     await Promise.all([svc.refresh(), svc.refresh()]);
     expect(getCredentials).toHaveBeenCalledTimes(1);
   });
+
+  it('does not flip online→offline on a single Helix empty-stream poll (session-counter flap guard)', async () => {
+    const getCredentials = vi.fn().mockResolvedValue(freshCreds());
+    // Live, then one empty /streams (would be a flap), then live again.
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json({ data: [{ game_name: 'Game', title: 'live', viewer_count: 5 }] }))
+      .mockResolvedValueOnce(json({ data: [] }))
+      .mockResolvedValueOnce(json({ data: [{ game_name: 'Just Chatting', title: 'brb' }] }))
+      .mockResolvedValueOnce(json({ data: [{ game_name: 'Game', title: 'live', viewer_count: 6 }] }));
+    const svc = new TwitchService({ fetch: fetchMock, getCredentials, offlineConfirmPolls: 2 });
+    svc.setApiKey('KEY');
+    await svc.refresh();
+    expect(svc.getStatus().online).toBe(true);
+    await svc.refresh(); // single offline flap — stay online
+    expect(svc.getStatus().online).toBe(true);
+    await svc.refresh(); // confirmed live again
+    expect(svc.getStatus()).toMatchObject({ online: true, viewers: 6 });
+  });
+
+  it('flips online→offline after enough consecutive offline polls', async () => {
+    const getCredentials = vi.fn().mockResolvedValue(freshCreds());
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json({ data: [{ game_name: 'Game', title: 'live', viewer_count: 1 }] }))
+      .mockResolvedValueOnce(json({ data: [] }))
+      .mockResolvedValueOnce(json({ data: [{ game_name: 'Just Chatting', title: 'ended' }] }))
+      .mockResolvedValueOnce(json({ data: [] }))
+      .mockResolvedValueOnce(json({ data: [{ game_name: 'Just Chatting', title: 'ended' }] }));
+    const svc = new TwitchService({ fetch: fetchMock, getCredentials, offlineConfirmPolls: 2 });
+    svc.setApiKey('KEY');
+    await svc.refresh();
+    expect(svc.getStatus().online).toBe(true);
+    await svc.refresh(); // first offline — still online
+    expect(svc.getStatus().online).toBe(true);
+    await svc.refresh(); // second offline — confirm offline
+    expect(svc.getStatus()).toMatchObject({ reachable: true, online: false, title: 'ended' });
+  });
 });
 
 describe('toUtcIso', () => {

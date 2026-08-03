@@ -9,8 +9,13 @@ export function useCommands(): { snap: CommandsSnapshot; refresh: () => Promise<
 
   React.useEffect(() => {
     let alive = true;
-    void window.api.commands.snapshot().then((s) => { if (alive) setSnap(s); });
-    const off = window.api.on(IPC.commandsChanged, (s) => setSnap(s as CommandsSnapshot));
+    let pushSeen = false;
+    // Subscribe before the snapshot so a push during the round-trip isn't lost, and ignore a stale snapshot after any push.
+    const off = window.api.on(IPC.commandsChanged, (s) => {
+      pushSeen = true;
+      setSnap(s as CommandsSnapshot);
+    });
+    void window.api.commands.snapshot().then((s) => { if (alive && !pushSeen) setSnap(s); });
     return () => { alive = false; off(); };
   }, []);
 

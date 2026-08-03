@@ -62,6 +62,8 @@ describe('ObsService', () => {
     const states: string[] = [];
     service.on('status', (s) => states.push(s.state));
     await service.connect({ host: 'localhost', port: 4455, password: 'pw' });
+    // Always tear down any prior session before connecting (reconnect hygiene).
+    expect(fake.disconnect).toHaveBeenCalled();
     expect(fake.connect).toHaveBeenCalledWith('ws://localhost:4455', 'pw', expect.anything());
     expect(states).toEqual(['connecting', 'connected']);
   });

@@ -6,13 +6,15 @@ import type { TwitchCredentials } from '../api/specter-api';
 export interface TwitchServiceDeps {
   fetch?: typeof fetch;
   clientId?: string;
-  /** Fetch fresh Twitch credentials (useable token + broadcaster id) for an API key. */
-  getCredentials: (key: string) => Promise<TwitchCredentials | null>;
+  /** Fetch fresh Twitch credentials (useable token + broadcaster id) for an API key. Pass `{ force: true }` after a 401. */
+  getCredentials: (key: string, opts?: { force?: boolean }) => Promise<TwitchCredentials | null>;
   intervalMs?: number;
   /** Fallback token lifetime when the account's updated timestamp can't be parsed. */
   tokenTtlMs?: number;
   /** Registers each freshly-fetched Twitch access token as a secret so it's scrubbed from log lines (defense-in-depth). */
   registerSecret?: (secret: string) => void;
+  /** Consecutive Helix "offline" polls required before flipping online→offline (avoids wiping session counters on a single flap). */
+  offlineConfirmPolls?: number;
 }
 
 const OFFLINE: TwitchStatus = { reachable: false, online: false };
@@ -25,16 +27,19 @@ type CachedCreds = { accessToken: string; broadcasterId: string };
 export class TwitchService extends EventEmitter {
   private fetch: typeof fetch;
   private clientId: string;
-  private getCredentials: (key: string) => Promise<TwitchCredentials | null>;
+  private getCredentials: (key: string, opts?: { force?: boolean }) => Promise<TwitchCredentials | null>;
   private registerSecret?: (secret: string) => void;
   private intervalMs: number;
   private tokenTtlMs: number;
+  private offlineConfirmPolls: number;
   private apiKey = '';
   private timer?: NodeJS.Timeout;
   private status: TwitchStatus = { ...OFFLINE };
   private creds: CachedCreds | null = null;
   private credsValidUntil = 0;
   private inFlight: Promise<void> | null = null;
+  /** Count of consecutive reachable-offline Helix answers while we still believe the stream is live. */
+  private offlineStreak = 0;
 
   constructor(deps: TwitchServiceDeps) {
     super();
@@ -44,6 +49,7 @@ export class TwitchService extends EventEmitter {
     this.registerSecret = deps.registerSecret;
     this.intervalMs = deps.intervalMs ?? 60_000;
     this.tokenTtlMs = deps.tokenTtlMs ?? (FOUR_HOURS_MS - 30 * 60 * 1000);
+    this.offlineConfirmPolls = Math.max(1, deps.offlineConfirmPolls ?? 2);
   }
 
   getStatus(): TwitchStatus {
@@ -54,6 +60,7 @@ export class TwitchService extends EventEmitter {
     this.apiKey = key.trim();
     this.creds = null; // a different key means different credentials
     this.credsValidUntil = 0;
+    this.offlineStreak = 0;
     if (!this.apiKey) {
       // Key cleared — stop polling and reset status so the dashboard drops the previous channel's online/viewers/title.
       this.stop();
@@ -85,23 +92,47 @@ export class TwitchService extends EventEmitter {
 
   private async doRefresh(): Promise<void> {
     let creds = await this.ensureCredentials(false);
-    if (!creds) { this.set({ ...OFFLINE }); return; }
+    if (!creds) { this.offlineStreak = 0; this.set({ ...OFFLINE }); return; }
 
     let result = await this.queryTwitch(creds);
     if (result === 'unauthorized') {
       // Token rejected — force a fresh one from the account and retry once.
       creds = await this.ensureCredentials(true);
-      if (!creds) { this.set({ ...OFFLINE }); return; }
+      if (!creds) { this.offlineStreak = 0; this.set({ ...OFFLINE }); return; }
       result = await this.queryTwitch(creds);
     }
-    this.set(result === 'unauthorized' || result === 'error' ? { ...OFFLINE } : result);
+    if (result === 'unauthorized' || result === 'error') {
+      // Unreachable Helix — don't treat as a confirmed offline (keeps reconcile from flapping session counters).
+      this.offlineStreak = 0;
+      this.set({ ...OFFLINE });
+      return;
+    }
+    this.applyHelixStatus(result);
+  }
+
+  /**
+   * Apply a reachable Helix answer. Online always wins immediately; offline requires
+   * `offlineConfirmPolls` consecutive answers when we currently believe the stream is live,
+   * so a single empty /streams response mid-broadcast can't wipe session counters via reconcile.
+   */
+  private applyHelixStatus(result: TwitchStatus): void {
+    if (result.online) {
+      this.offlineStreak = 0;
+      this.set(result);
+      return;
+    }
+    this.offlineStreak += 1;
+    if (!this.status.online || this.offlineStreak >= this.offlineConfirmPolls) {
+      this.set(result);
+    }
+    // else: keep the previous online status through a single (or short) offline flap
   }
 
   /** Return cached credentials, only hitting /v2/account when missing/stale/forced. */
   private async ensureCredentials(force: boolean): Promise<CachedCreds | null> {
     if (!this.apiKey) return null;
     if (!force && this.creds && Date.now() < this.credsValidUntil) return this.creds;
-    const fresh = await this.getCredentials(this.apiKey);
+    const fresh = await this.getCredentials(this.apiKey, { force });
     if (!fresh) { this.creds = null; this.credsValidUntil = 0; return null; }
     // Defense-in-depth: scrub the live Twitch token from any future log line.
     this.registerSecret?.(fresh.accessToken);

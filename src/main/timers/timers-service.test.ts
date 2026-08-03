@@ -49,7 +49,9 @@ describe('TimersService.refresh', () => {
     const fetchMock = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => jsonResponse({
       timers: [
         { id: 1, trigger_type: 'timer', interval_count: 30, chat_line_trigger: null, message: 'A', enabled: true },
-        { id: 2, trigger_type: 'chat_lines', interval_count: null, chat_line_trigger: 10, message: 'B', enabled: false }
+        { id: 2, trigger_type: 'chat_lines', interval_count: null, chat_line_trigger: 10, message: 'B', enabled: false },
+        // Numeric strings from some API paths must still map to numbers (not null).
+        { id: 3, trigger_type: 'timer', interval_count: '45', chat_line_trigger: '12', message: 'C', enabled: true }
       ]
     }));
     const svc = new TimersService({ fetch: fetchMock, getApiKey: () => 'KEY' });
@@ -58,7 +60,8 @@ describe('TimersService.refresh', () => {
     expect(snap.state).toBe('ok');
     expect(snap.timers).toEqual([
       { id: 1, triggerType: 'timer', intervalCount: 30, chatLineTrigger: null, message: 'A', enabled: true },
-      { id: 2, triggerType: 'chat_lines', intervalCount: null, chatLineTrigger: 10, message: 'B', enabled: false }
+      { id: 2, triggerType: 'chat_lines', intervalCount: null, chatLineTrigger: 10, message: 'B', enabled: false },
+      { id: 3, triggerType: 'timer', intervalCount: 45, chatLineTrigger: 12, message: 'C', enabled: true }
     ]);
     const url = String(fetchMock.mock.calls[0][0]);
     expect(url).toContain('/timers');

@@ -107,4 +107,24 @@ describe('SpecterApiService.getCredentials', () => {
     expect(await svc.getCredentials('')).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('caches credentials so repeated calls do not re-hit /v2/account', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      useable_access_token: 'UTOK', twitch_user_id: '1234567', useable_access_token_updated: new Date().toISOString()
+    }));
+    const svc = new SpecterApiService({ fetch: fetchMock });
+    expect(await svc.getCredentials('KEY')).toMatchObject({ accessToken: 'UTOK' });
+    expect(await svc.getCredentials('KEY')).toMatchObject({ accessToken: 'UTOK' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('bypasses the cache when force is true', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      useable_access_token: 'UTOK', twitch_user_id: '1234567', useable_access_token_updated: new Date().toISOString()
+    }));
+    const svc = new SpecterApiService({ fetch: fetchMock });
+    await svc.getCredentials('KEY');
+    await svc.getCredentials('KEY', { force: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

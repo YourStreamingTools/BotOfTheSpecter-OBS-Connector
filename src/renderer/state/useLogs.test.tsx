@@ -27,4 +27,14 @@ describe('useLogs', () => {
     // Newest-first: the live line (arrived during the round-trip) stays in front of the history.
     expect(screen.getByTestId('logs').textContent).toBe('live|history');
   });
+
+  it('dedupes a line that both arrived live and is present in the snapshot', async () => {
+    let resolveSnap: (v: LogEntry[]) => void = () => undefined;
+    window.api.logs = { snapshot: vi.fn((): Promise<LogEntry[]> => new Promise((r) => { resolveSnap = r; })) };
+    render(<Probe />);
+    const shared = line('same');
+    act(() => listeners['log:line'](shared));
+    await act(async () => { resolveSnap([shared, line('older')]); });
+    expect(screen.getByTestId('logs').textContent).toBe('same|older');
+  });
 });

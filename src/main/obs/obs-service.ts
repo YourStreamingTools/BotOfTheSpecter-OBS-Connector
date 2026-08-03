@@ -10,9 +10,11 @@ import { peakDbFromLevels } from './audio-meters';
 const OBSWebSocketCtor: typeof OBSWebSocket =
   (OBSWebSocket as unknown as { default?: typeof OBSWebSocket }).default ?? OBSWebSocket;
 
+// Must include every event that should refresh scenes/sources; RELAYOUT_EVENTS alone is not subscribed.
 const FORWARDED_EVENTS = [
   'CurrentProgramSceneChanged', 'CurrentPreviewSceneChanged', 'SceneItemEnableStateChanged',
-  'SceneCreated', 'SceneRemoved', 'StreamStateChanged', 'RecordStateChanged',
+  'SceneCreated', 'SceneRemoved', 'SceneItemCreated', 'SceneItemRemoved',
+  'StreamStateChanged', 'RecordStateChanged',
   'ReplayBufferStateChanged', 'VirtualcamStateChanged', 'InputMuteStateChanged'
 ];
 const RELAYOUT_EVENTS = new Set([
@@ -83,6 +85,8 @@ export class ObsService extends EventEmitter {
 
   async connect(params: ObsConnectParams): Promise<void> {
     this.url = `ws://${params.host}:${params.port}`;
+    // Tear down any half-open session first — re-connect while already connected throws / leaves the client stuck.
+    try { await this.obs.disconnect(); } catch { /* ignore */ }
     // Start from a clean slate so a stale stream anchor or bitrate counter from a prior session (e.g. one ended via ConnectionClosed without disconnect) can't skew the new session.
     this.resetSession();
     this.setStatus({ state: 'connecting', url: this.url, error: undefined });

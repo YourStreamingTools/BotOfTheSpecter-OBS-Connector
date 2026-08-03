@@ -71,10 +71,12 @@ export function ScreenRaffles() {
   const snap = useRaffles();
   const [editing, setEditing] = React.useState<Draft | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
   const [refreshing, setRefreshing] = React.useState(false);
   const [openEntries, setOpenEntries] = React.useState<number | null>(null);
   const [entries, setEntries] = React.useState<RaffleEntry[]>([]);
   const [entriesLoading, setEntriesLoading] = React.useState(false);
+  const entriesReq = React.useRef(0);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -85,10 +87,15 @@ export function ScreenRaffles() {
     if (!editing) return;
     const input = draftToInput(editing);
     setBusy(true);
+    setSaveError(null);
     try {
-      if (editing.id == null) await window.api.raffles.create(input);
-      else await window.api.raffles.update(editing.id, input);
-      setEditing(null);
+      const ok = editing.id == null
+        ? await window.api.raffles.create(input)
+        : await window.api.raffles.update(editing.id, input);
+      if (ok) setEditing(null);
+      else setSaveError('Save failed — check your API key and try again.');
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Save failed');
     } finally {
       setBusy(false);
     }
@@ -96,12 +103,16 @@ export function ScreenRaffles() {
 
   const showEntries = async (r: Raffle) => {
     if (openEntries === r.id) { setOpenEntries(null); return; }
+    const req = ++entriesReq.current;
     setOpenEntries(r.id);
+    setEntries([]);
     setEntriesLoading(true);
     try {
-      setEntries(await window.api.raffles.entries(r.id));
+      const list = await window.api.raffles.entries(r.id);
+      if (entriesReq.current !== req) return; // a newer open superseded this request
+      setEntries(list);
     } finally {
-      setEntriesLoading(false);
+      if (entriesReq.current === req) setEntriesLoading(false);
     }
   };
 
@@ -148,7 +159,14 @@ export function ScreenRaffles() {
       )}
 
       {editing && (
-        <RaffleEditor draft={editing} busy={busy} onChange={setEditing} onSave={() => void save()} onCancel={() => setEditing(null)} />
+        <RaffleEditor
+          draft={editing}
+          busy={busy}
+          saveError={saveError}
+          onChange={(d) => { setSaveError(null); setEditing(d); }}
+          onSave={() => void save()}
+          onCancel={() => { setSaveError(null); setEditing(null); }}
+        />
       )}
     </div>
   );
@@ -263,8 +281,8 @@ function ConfirmButton({
 }
 
 function RaffleEditor({
-  draft, busy, onChange, onSave, onCancel
-}: { draft: Draft; busy: boolean; onChange: (d: Draft) => void; onSave: () => void; onCancel: () => void }) {
+  draft, busy, saveError, onChange, onSave, onCancel
+}: { draft: Draft; busy: boolean; saveError?: string | null; onChange: (d: Draft) => void; onSave: () => void; onCancel: () => void }) {
   const error = validateRaffleInput(draftToInput(draft));
   const patch = (p: Partial<Draft>) => onChange({ ...draft, ...p });
   const Check = ({ checked, onChange: onCheck, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) => (
@@ -334,6 +352,7 @@ function RaffleEditor({
           </div>
 
           {error && <div style={{ fontSize: 12, color: 'var(--error)' }}>{error}</div>}
+          {saveError && <div style={{ fontSize: 12, color: 'var(--error)' }}>{saveError}</div>}
 
           <div className="row" style={{ gap: 8, justifyContent: 'flex-end' }}>
             <button className="btn" onClick={onCancel}>Cancel</button>

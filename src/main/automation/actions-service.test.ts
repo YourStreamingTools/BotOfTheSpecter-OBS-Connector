@@ -129,6 +129,13 @@ describe('ActionsService.update', () => {
     expect(updated).toMatchObject({ id: a.id, name: 'Renamed', enabled: false, createdAt: a.createdAt, updatedAt: '2026-05-28T11:00:00.000Z' });
   });
 
+  it('preserves enabled when the update omits it (does not force re-enable)', async () => {
+    const svc = new ActionsService({ store: fakeStore(), now: () => '2026-05-28T11:00:00.000Z' });
+    const a = await svc.create({ ...inputCallWebpage, enabled: false });
+    const updated = await svc.update(a.id, { name: 'Still off', body: inputCallWebpage.body });
+    expect(updated?.enabled).toBe(false);
+  });
+
   it('returns null when the id does not exist', async () => {
     const svc = new ActionsService({ store: fakeStore() });
     expect(await svc.update('nope', inputCmd)).toBeNull();

@@ -15,6 +15,13 @@ describe('normalizeObsEvent', () => {
     expect(e.message).toBe('Source #4 in Gameplay hidden');
   });
 
+  it('describes scene item add/remove', () => {
+    expect(normalizeObsEvent('SceneItemCreated', { sceneName: 'Gameplay', sourceName: 'Cam' }).message)
+      .toBe('Source added in Gameplay: Cam');
+    expect(normalizeObsEvent('SceneItemRemoved', { sceneName: 'Gameplay', sceneItemId: 9 }).message)
+      .toBe('Source removed from Gameplay: #9');
+  });
+
   it('describes stream state via outputActive', () => {
     expect(normalizeObsEvent('StreamStateChanged', { outputActive: true }).message).toBe('Streaming started');
     expect(normalizeObsEvent('StreamStateChanged', { outputActive: false }).message).toBe('Streaming stopped');

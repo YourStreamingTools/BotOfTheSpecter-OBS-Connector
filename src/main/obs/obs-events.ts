@@ -20,6 +20,10 @@ function describe(type: string, d: Data): string {
       return `Scene created: ${d.sceneName ?? 'Unknown'}`;
     case 'SceneRemoved':
       return `Scene removed: ${d.sceneName ?? 'Unknown'}`;
+    case 'SceneItemCreated':
+      return `Source added in ${d.sceneName ?? 'Unknown'}: ${d.sourceName ?? `#${d.sceneItemId ?? '?'}`}`;
+    case 'SceneItemRemoved':
+      return `Source removed from ${d.sceneName ?? 'Unknown'}: ${d.sourceName ?? `#${d.sceneItemId ?? '?'}`}`;
     case 'StreamStateChanged':
       return d.outputActive ? 'Streaming started' : 'Streaming stopped';
     case 'RecordStateChanged':

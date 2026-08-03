@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { io, type Socket } from 'socket.io-client';
-import { SPECTER_WEBSOCKET_URI, APP_VERSION, RECONNECT_DELAY_MS, JITTER_MAX_MS } from '@shared/constants';
+import { SPECTER_WEBSOCKET_URI, APP_VERSION, RECONNECT_DELAY_MS, JITTER_MAX_MS, CONNECTION_TIMEOUT_MS } from '@shared/constants';
 import type { RelayStatus } from '@shared/ipc';
 import { redactSensitive } from '@shared/redact';
 import type { ObsService } from '../obs/obs-service';
@@ -21,6 +21,7 @@ export class RelayService extends EventEmitter {
   private socket?: Socket;
   private apiKey = '';
   private status: RelayStatus = { state: 'disconnected', registered: false, locked: false, hasApiKey: false };
+  private registerTimer?: NodeJS.Timeout;
 
   constructor(private deps: RelayServiceDeps) {
     super();
@@ -67,8 +68,10 @@ export class RelayService extends EventEmitter {
       // Socket is up but not yet registered; the 'SUCCESS' event (see onAny) flips `registered`.
       this.setStatus({ state: 'connected' });
       this.deps.log.add('WS', 'ok', 'Connected to BotOfTheSpecter relay');
+      this.armRegisterTimeout();
     });
     socket.on('disconnect', () => {
+      this.clearRegisterTimeout();
       this.setStatus({ state: this.apiKey ? 'connecting' : 'disconnected', registered: false });
       this.deps.log.add('WS', 'warn', 'Relay disconnected — reconnecting');
     });
@@ -85,11 +88,31 @@ export class RelayService extends EventEmitter {
   }
 
   disconnect(): void {
+    this.clearRegisterTimeout();
     if (this.socket) {
       try { this.socket.disconnect(); } catch { /* ignore */ }
       this.socket = undefined;
     }
     this.setStatus({ state: 'disconnected', registered: false });
+  }
+
+  private armRegisterTimeout(): void {
+    this.clearRegisterTimeout();
+    this.registerTimer = setTimeout(() => {
+      this.registerTimer = undefined;
+      if (this.status.registered) return;
+      // Socket is up but REGISTER never confirmed — surface the failure so the UI doesn't stay "connected" forever.
+      // Do not disconnect here: the disconnect handler would flip state back to "connecting" and hide the error.
+      this.setStatus({ state: 'error', error: 'Relay registration timed out', registered: false });
+      this.deps.log.add('WS', 'err', 'Relay registration timed out — no SUCCESS after connect');
+    }, CONNECTION_TIMEOUT_MS);
+  }
+
+  private clearRegisterTimeout(): void {
+    if (this.registerTimer) {
+      clearTimeout(this.registerTimer);
+      this.registerTimer = undefined;
+    }
   }
 
   forwardObsEvent(type: string, data: Record<string, unknown>): void {
@@ -98,7 +121,12 @@ export class RelayService extends EventEmitter {
 
   private onAny(event: string, data: unknown): void {
     if (event === 'WELCOME') { this.deps.log.add('WS', 'ok', 'Specter connected'); return; }
-    if (event === 'SUCCESS') { this.setStatus({ registered: true }); this.deps.log.add('WS', 'ok', 'Registered with relay'); return; }
+    if (event === 'SUCCESS') {
+      this.clearRegisterTimeout();
+      this.setStatus({ registered: true });
+      this.deps.log.add('WS', 'ok', 'Registered with relay');
+      return;
+    }
     if (IGNORED_FOR_VARS.has(event)) return;
     const raw = (data && typeof data === 'object') ? (data as Record<string, unknown>) : {};
     // Redact secrets (incl. the API key) at the boundary so the variables view and logs never surface them.

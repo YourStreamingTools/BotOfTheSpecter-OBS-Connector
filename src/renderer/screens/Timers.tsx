@@ -38,6 +38,7 @@ export function ScreenTimers() {
   const [editing, setEditing] = React.useState<Draft | null>(null);
   const [refreshing, setRefreshing] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -48,10 +49,15 @@ export function ScreenTimers() {
     if (!editing) return;
     const input = draftToInput(editing);
     setBusy(true);
+    setSaveError(null);
     try {
-      if (editing.id == null) await window.api.timers.create(input);
-      else await window.api.timers.update(editing.id, input);
-      setEditing(null);
+      const ok = editing.id == null
+        ? await window.api.timers.create(input)
+        : await window.api.timers.update(editing.id, input);
+      if (ok) setEditing(null);
+      else setSaveError('Save failed — check your API key and try again.');
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Save failed');
     } finally {
       setBusy(false);
     }
@@ -97,7 +103,14 @@ export function ScreenTimers() {
       )}
 
       {editing && (
-        <TimerEditor draft={editing} busy={busy} onChange={setEditing} onSave={() => void save()} onCancel={() => setEditing(null)} />
+        <TimerEditor
+          draft={editing}
+          busy={busy}
+          saveError={saveError}
+          onChange={(d) => { setSaveError(null); setEditing(d); }}
+          onSave={() => void save()}
+          onCancel={() => { setSaveError(null); setEditing(null); }}
+        />
       )}
     </div>
   );
@@ -156,8 +169,8 @@ function TimerRow({ timer, onEdit, onToggle, onRemove }: { timer: Timer; onEdit:
 }
 
 function TimerEditor({
-  draft, busy, onChange, onSave, onCancel
-}: { draft: Draft; busy: boolean; onChange: (d: Draft) => void; onSave: () => void; onCancel: () => void }) {
+  draft, busy, saveError, onChange, onSave, onCancel
+}: { draft: Draft; busy: boolean; saveError?: string | null; onChange: (d: Draft) => void; onSave: () => void; onCancel: () => void }) {
   const error = validateTimerInput(draftToInput(draft));
   const showInterval = draft.triggerType !== 'chat_lines';
   const showChat = draft.triggerType !== 'timer';
@@ -204,6 +217,7 @@ function TimerEditor({
           </div>
 
           {error && <div style={{ fontSize: 12, color: 'var(--error)' }}>{error}</div>}
+          {saveError && <div style={{ fontSize: 12, color: 'var(--error)' }}>{saveError}</div>}
 
           <div className="row" style={{ gap: 8, justifyContent: 'flex-end' }}>
             <button className="btn" onClick={onCancel}>Cancel</button>

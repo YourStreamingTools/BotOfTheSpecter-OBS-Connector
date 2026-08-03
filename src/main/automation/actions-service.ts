@@ -74,7 +74,8 @@ export class ActionsService extends EventEmitter {
     const updated: Action = {
       ...existing,
       name: input.name.trim(),
-      enabled: input.enabled ?? true,
+      // Preserve existing enabled when the caller omits it (partial updates must not re-enable a disabled action).
+      enabled: input.enabled ?? existing.enabled,
       body: input.body,
       updatedAt: this.now()
     };

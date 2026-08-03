@@ -249,6 +249,7 @@ function RewardEditor({ reward, onClose }: { reward: ChannelReward | null; onClo
   const [maxEnabled, setMaxEnabled] = React.useState(reward?.maxPerStreamEnabled ?? false);
   const [maxPerStream, setMaxPerStream] = React.useState(String(reward?.maxPerStream || 1));
   const [busy, setBusy] = React.useState(false);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
 
   const costNum = Number(cost);
   const error =
@@ -262,6 +263,7 @@ function RewardEditor({ reward, onClose }: { reward: ChannelReward | null; onClo
   const save = async () => {
     if (error) return;
     setBusy(true);
+    setSaveError(null);
     // create + update share the same field set (ChannelRewardUpdate ⊂ ChannelRewardCreate).
     const fields = {
       title: title.trim(), cost: costNum, prompt, isUserInputRequired: userInput,
@@ -269,9 +271,13 @@ function RewardEditor({ reward, onClose }: { reward: ChannelReward | null; onClo
       isMaxPerStreamEnabled: maxEnabled, maxPerStream: Number(maxPerStream)
     };
     try {
-      if (creating) await window.api.channelPoints.createReward(fields as ChannelRewardCreate);
-      else await window.api.channelPoints.updateReward(reward.id, fields as ChannelRewardUpdate);
-      onClose();
+      const ok = creating
+        ? await window.api.channelPoints.createReward(fields as ChannelRewardCreate)
+        : await window.api.channelPoints.updateReward(reward.id, fields as ChannelRewardUpdate);
+      if (ok) onClose();
+      else setSaveError('Save failed — check your API key and try again.');
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Save failed');
     } finally { setBusy(false); }
   };
 
@@ -311,6 +317,7 @@ function RewardEditor({ reward, onClose }: { reward: ChannelReward | null; onClo
             {maxEnabled && <input className="input mono" type="number" min={1} value={maxPerStream} style={{ marginTop: 6 }} onChange={(e) => setMaxPerStream(e.target.value)} />}
           </div>
           {error && <div style={{ fontSize: 12, color: 'var(--error)' }}>{error}</div>}
+          {saveError && <div style={{ fontSize: 12, color: 'var(--error)' }}>{saveError}</div>}
           <div className="row" style={{ gap: 8, justifyContent: 'flex-end' }}>
             <button className="btn" onClick={onClose}>Cancel</button>
             <button className="btn btn-primary" disabled={!!error || busy} onClick={() => void save()}>{busy ? 'Saving…' : creating ? 'Create' : 'Save'}</button>

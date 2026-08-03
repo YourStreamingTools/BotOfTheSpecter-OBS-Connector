@@ -27,10 +27,19 @@ export function useAutomations(): {
 
   React.useEffect(() => {
     let alive = true;
-    void window.api.folders.list().then((list) => { if (alive) setFolders(list); });
-    void window.api.automations.list().then((list) => { if (alive) setAutomations(list); });
-    const offFolders = window.api.on(IPC.foldersChanged, (list) => setFolders(list as Folder[]));
-    const offAutomations = window.api.on(IPC.automationsChanged, (list) => setAutomations(list as Automation[]));
+    let foldersPush = false;
+    let automationsPush = false;
+    // Subscribe before list so a push during the round-trip isn't lost; ignore stale lists after any push.
+    const offFolders = window.api.on(IPC.foldersChanged, (list) => {
+      foldersPush = true;
+      setFolders(list as Folder[]);
+    });
+    const offAutomations = window.api.on(IPC.automationsChanged, (list) => {
+      automationsPush = true;
+      setAutomations(list as Automation[]);
+    });
+    void window.api.folders.list().then((list) => { if (alive && !foldersPush) setFolders(list); });
+    void window.api.automations.list().then((list) => { if (alive && !automationsPush) setAutomations(list); });
     return () => { alive = false; offFolders(); offAutomations(); };
   }, []);
 

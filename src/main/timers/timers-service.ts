@@ -134,9 +134,19 @@ function mapTimer(raw: unknown): Timer {
   return {
     id: Number(t.id),
     triggerType: tt === 'chat_lines' || tt === 'both' ? tt : 'timer',
-    intervalCount: typeof t.interval_count === 'number' ? t.interval_count : null,
-    chatLineTrigger: typeof t.chat_line_trigger === 'number' ? t.chat_line_trigger : null,
+    // Coerce numeric strings (common from query/JSON APIs) so the UI doesn't show blank intervals.
+    intervalCount: asFiniteNumber(t.interval_count),
+    chatLineTrigger: asFiniteNumber(t.chat_line_trigger),
     message: String(t.message ?? ''),
     enabled: Boolean(t.enabled)
   };
+}
+
+function asFiniteNumber(v: unknown): number | null {
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  if (typeof v === 'string' && v.trim() !== '') {
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
 }

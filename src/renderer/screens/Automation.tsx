@@ -416,9 +416,15 @@ function AutomationCard({ automation, level, ...rest }: AutomationCardProps) {
   } = rest;
   const expanded = expandedCards.has(automation.id);
 
-  // Local mirror of the automation for snappy inline edits; pushed to the service on commit (blur/explicit change) and re-synced by push refresh.
+  // Local mirror for snappy inline edits. Reseed only when the card switches to a different
+  // automation id — re-applying every list push would wipe in-progress keystrokes mid-edit.
   const [draft, setDraft] = React.useState<Automation>(automation);
-  React.useEffect(() => { setDraft(automation); }, [automation]);
+  const draftRef = React.useRef(automation);
+  draftRef.current = draft;
+  React.useEffect(() => {
+    setDraft(automation);
+    draftRef.current = automation;
+  }, [automation.id]); // eslint-disable-line react-hooks/exhaustive-deps -- intentional: id-only reseed
 
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [fired, setFired] = React.useState(false);
@@ -426,34 +432,60 @@ function AutomationCard({ automation, level, ...rest }: AutomationCardProps) {
   const firedTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   React.useEffect(() => () => { if (firedTimer.current) clearTimeout(firedTimer.current); }, []);
 
-  const persist = React.useCallback(async (next: Partial<AutomationInput>) => {
-    const input: AutomationInput = {
-      name: next.name ?? draft.name,
-      enabled: next.enabled ?? draft.enabled,
-      folderId: 'folderId' in next ? next.folderId : draft.folderId,
-      queue: 'queue' in next ? next.queue : draft.queue,
-      triggers: next.triggers ?? draft.triggers,
-      checks: next.checks ?? draft.checks,
-      checksGate: next.checksGate ?? draft.checksGate,
-      actions: next.actions ?? draft.actions
+  // Serialize full-object persists so concurrent section edits can't overwrite each other with a stale payload.
+  const persistChain = React.useRef(Promise.resolve());
+  const applyAndPersist = React.useCallback((patch: Partial<AutomationInput>) => {
+    const base = draftRef.current;
+    const next: Automation = {
+      ...base,
+      name: patch.name ?? base.name,
+      enabled: patch.enabled ?? base.enabled,
+      folderId: 'folderId' in patch ? patch.folderId ?? null : base.folderId,
+      queue: 'queue' in patch ? patch.queue ?? null : base.queue,
+      triggers: patch.triggers ?? base.triggers,
+      checks: patch.checks ?? base.checks,
+      checksGate: patch.checksGate ?? base.checksGate,
+      actions: patch.actions ?? base.actions
     };
-    await updateAutomation(draft.id, input);
-  }, [draft, updateAutomation]);
+    draftRef.current = next;
+    setDraft(next);
+    const run = persistChain.current.then(async () => {
+      // Always send the latest draft at execution time (another patch may have landed while we waited).
+      const d = draftRef.current;
+      await updateAutomation(d.id, {
+        name: d.name,
+        enabled: d.enabled,
+        folderId: d.folderId,
+        queue: d.queue,
+        triggers: d.triggers,
+        checks: d.checks,
+        checksGate: d.checksGate,
+        actions: d.actions
+      });
+    }).catch(() => { /* keep chain alive; failures surface via list state */ });
+    persistChain.current = run;
+    return run;
+  }, [updateAutomation]);
 
   const onToggleEnabled = async () => {
-    const nextEnabled = !draft.enabled;
-    setDraft((d) => ({ ...d, enabled: nextEnabled }));
-    await persist({ enabled: nextEnabled });
+    await applyAndPersist({ enabled: !draftRef.current.enabled });
   };
 
   const commitName = async () => {
-    const trimmed = draft.name.trim();
-    if (!trimmed) { setDraft((d) => ({ ...d, name: automation.name })); return; }
-    if (trimmed !== automation.name) await persist({ name: trimmed });
+    const trimmed = draftRef.current.name.trim();
+    if (!trimmed) {
+      setDraft((d) => {
+        const next = { ...d, name: automation.name };
+        draftRef.current = next;
+        return next;
+      });
+      return;
+    }
+    if (trimmed !== automation.name) await applyAndPersist({ name: trimmed });
   };
 
   const onTestFire = async () => {
-    await testFire(draft.id);
+    await testFire(draftRef.current.id);
     setFired(true);
     if (firedTimer.current) clearTimeout(firedTimer.current);
     firedTimer.current = setTimeout(() => setFired(false), 1500);
@@ -461,29 +493,14 @@ function AutomationCard({ automation, level, ...rest }: AutomationCardProps) {
 
   const onDelete = async () => {
     if (!confirmDelete) { setConfirmDelete(true); return; }
-    await deleteAutomation(draft.id);
+    await deleteAutomation(draftRef.current.id);
   };
 
-  const setTriggers = async (triggers: Trigger[]) => {
-    setDraft((d) => ({ ...d, triggers }));
-    await persist({ triggers });
-  };
-  const setChecks = async (checks: Check[]) => {
-    setDraft((d) => ({ ...d, checks }));
-    await persist({ checks });
-  };
-  const setChecksGate = async (checksGate: ChecksGate) => {
-    setDraft((d) => ({ ...d, checksGate }));
-    await persist({ checksGate });
-  };
-  const setActions = async (next: AutomationActions) => {
-    setDraft((d) => ({ ...d, actions: next }));
-    await persist({ actions: next });
-  };
-  const setQueue = async (queue: string | null) => {
-    setDraft((d) => ({ ...d, queue }));
-    await persist({ queue });
-  };
+  const setTriggers = async (triggers: Trigger[]) => { await applyAndPersist({ triggers }); };
+  const setChecks = async (checks: Check[]) => { await applyAndPersist({ checks }); };
+  const setChecksGate = async (checksGate: ChecksGate) => { await applyAndPersist({ checksGate }); };
+  const setActions = async (next: AutomationActions) => { await applyAndPersist({ actions: next }); };
+  const setQueue = async (queue: string | null) => { await applyAndPersist({ queue }); };
 
   return (
     <div

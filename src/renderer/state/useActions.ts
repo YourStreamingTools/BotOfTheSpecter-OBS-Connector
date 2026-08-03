@@ -12,8 +12,13 @@ export function useActions(): {
 
   React.useEffect(() => {
     let alive = true;
-    void window.api.actions.list().then((list) => { if (alive) setActions(list); });
-    const off = window.api.on(IPC.actionsChanged, (list) => setActions(list as Action[]));
+    let pushSeen = false;
+    // Subscribe before list so a push during the round-trip isn't lost; ignore a stale list after any push.
+    const off = window.api.on(IPC.actionsChanged, (list) => {
+      pushSeen = true;
+      setActions(list as Action[]);
+    });
+    void window.api.actions.list().then((list) => { if (alive && !pushSeen) setActions(list); });
     return () => { alive = false; off(); };
   }, []);
 

@@ -45,6 +45,21 @@ describe('RelayService', () => {
     expect(d.svc.getStatus().registered).toBe(true);
   });
 
+  it('times out registration when SUCCESS never arrives', () => {
+    vi.useFakeTimers();
+    try {
+      d.svc.connect();
+      d.socket.connect();
+      expect(d.svc.getStatus().registered).toBe(false);
+      vi.advanceTimersByTime(30_000);
+      expect(d.svc.getStatus().state).toBe('error');
+      expect(d.svc.getStatus().error).toMatch(/registration timed out/i);
+      expect(d.svc.getStatus().registered).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('treats connect_error as a transient reconnecting state, not a terminal error', () => {
     d.svc.connect();
     d.socket.connect();

@@ -12,9 +12,14 @@ export interface SpecterApiDeps {
   fetch?: typeof fetch;
 }
 
+const CRED_TTL_MS = 3.5 * 60 * 60 * 1000; // ~3.5h — Twitch tokens last ~4h; leave margin for rotation.
+const CRED_EXPIRY_MARGIN_MS = 5 * 60 * 1000;
+
 /** Talks to the BotOfTheSpecter HTTP API via the `X-API-KEY` header; `fetch` is injectable for unit tests. */
 export class SpecterApiService {
   private fetch: typeof fetch;
+  /** Shared cache so Helix helpers (polls/predictions/channel-points) and TwitchService don't re-hit /v2/account every call. */
+  private credCache: { key: string; creds: TwitchCredentials; validUntil: number } | null = null;
 
   constructor(deps: SpecterApiDeps = {}) {
     this.fetch = deps.fetch ?? fetch;
@@ -63,21 +68,46 @@ export class SpecterApiService {
     }
   }
 
-  /** Fetch Twitch credentials from /v2/account (useable access token, broadcaster id from twitch_user_id, last-updated timestamp); main-process only, for the Twitch Helix API. */
-  async getCredentials(key: string): Promise<TwitchCredentials | null> {
+  /**
+   * Fetch Twitch credentials from /v2/account (useable access token, broadcaster id from twitch_user_id, last-updated timestamp);
+   * main-process only, for the Twitch Helix API. Results are cached per API key (~3.5h) unless `force` is set
+   * (e.g. after a Helix 401) so polls/predictions/channel-points don't re-fetch on every 5s refresh.
+   */
+  async getCredentials(key: string, opts?: { force?: boolean }): Promise<TwitchCredentials | null> {
     if (!key) return null;
+    if (!opts?.force && this.credCache && this.credCache.key === key && Date.now() < this.credCache.validUntil) {
+      return this.credCache.creds;
+    }
     try {
       const res = await this.fetch(`${BOTOFTHESPECTER_API_BASE}/v2/account`, {
         headers: { accept: 'application/json', 'X-API-KEY': key }
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        if (this.credCache?.key === key) this.credCache = null;
+        return null;
+      }
       const d = (await res.json()) as { useable_access_token?: string; twitch_user_id?: string | number; useable_access_token_updated?: string };
       const accessToken = String(d.useable_access_token ?? '').trim();
       const broadcasterId = String(d.twitch_user_id ?? '').trim();
-      if (!accessToken || !broadcasterId) return null;
-      return { accessToken, broadcasterId, updatedAt: d.useable_access_token_updated };
+      if (!accessToken || !broadcasterId) {
+        if (this.credCache?.key === key) this.credCache = null;
+        return null;
+      }
+      const creds: TwitchCredentials = { accessToken, broadcasterId, updatedAt: d.useable_access_token_updated };
+      this.credCache = { key, creds, validUntil: this.credValidUntil(creds.updatedAt) };
+      return creds;
     } catch {
       return null;
     }
+  }
+
+  private credValidUntil(updatedAt?: string): number {
+    if (updatedAt) {
+      const raw = updatedAt.trim();
+      const iso = /([zZ]|[+-]\d{2}:?\d{2})$/.test(raw) ? raw : `${raw.replace(' ', 'T')}Z`;
+      const ms = Date.parse(iso);
+      if (Number.isFinite(ms)) return ms + 4 * 60 * 60 * 1000 - CRED_EXPIRY_MARGIN_MS;
+    }
+    return Date.now() + CRED_TTL_MS;
   }
 }

@@ -5,6 +5,16 @@ import iconPath from '../../resources/icon.png?asset';
 // Re-exported so the main entrypoint can pass the same path to app.dock.setIcon() on macOS.
 export const APP_ICON_PATH = iconPath;
 
+/** Only http(s) URLs may leave the app via openExternal. */
+export function isSafeExternalUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' || u.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
 export function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1280,
@@ -27,10 +37,17 @@ export function createMainWindow(): BrowserWindow {
 
   win.once('ready-to-show', () => win.show());
 
-  // External links open in the OS browser, never in-app.
+  // External links open in the OS browser, never in-app. Only http(s) — deny file:, custom protocols, etc.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    if (isSafeExternalUrl(url)) void shell.openExternal(url);
     return { action: 'deny' };
+  });
+  // Defense-in-depth: never navigate the app shell away from the packed renderer / dev server.
+  win.webContents.on('will-navigate', (event, url) => {
+    const allowed =
+      (process.env.ELECTRON_RENDERER_URL && url.startsWith(process.env.ELECTRON_RENDERER_URL)) ||
+      url.startsWith('file:');
+    if (!allowed) event.preventDefault();
   });
 
   if (process.env.ELECTRON_RENDERER_URL) {

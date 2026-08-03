@@ -47,9 +47,11 @@ let actions: ActionsService;
 let automations: AutomationsService;
 
 // Allow-list of persistable config keys for config:set, blocking arbitrary keys from a compromised renderer.
+// Service-owned collections (variables/actions/folders/automations) are written only via their IPC services
+// so a raw config:set cannot desync the in-memory service copy from disk.
 const CONFIG_KEYS = new Set<keyof AppConfig>([
   'api_key', 'obs_host', 'obs_port', 'obs_password', 'autoConnectObs', 'log_expanded',
-  'theme', 'density', 'sidebarExpanded', 'variables', 'actions', 'folders', 'automations', 'streamOutputCount'
+  'theme', 'density', 'sidebarExpanded', 'streamOutputCount'
 ]);
 
 function broadcast(channel: string, payload: unknown): void {
