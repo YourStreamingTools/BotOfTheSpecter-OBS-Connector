@@ -14,10 +14,12 @@ export class LogService extends EventEmitter {
     if (secret && secret.length >= 6) this.secrets.add(secret);
   }
 
-  add(src: LogSource, level: LogLevel, message: string): void {
+  add(src: LogSource, level: LogLevel, message: string, event?: string): void {
     let safe = message;
     for (const s of this.secrets) if (safe.includes(s)) safe = safe.split(s).join('***REDACTED***');
     const entry: LogEntry = { t: timecode(), src, level, message: safe };
+    const ev = typeof event === 'string' ? event.trim() : '';
+    if (ev) entry.event = ev;
     this.buf.unshift(entry);
     if (this.buf.length > this.cap) this.buf.length = this.cap;
     this.emit('line', entry);

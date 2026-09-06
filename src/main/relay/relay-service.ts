@@ -15,6 +15,8 @@ export interface RelayServiceDeps {
   log: Pick<LogService, 'add'>;
   socketFactory?: (url: string) => Socket;
   getVersion?: () => string;
+  /** Live Activity mute list — high-volume events (CLOSED_CAPTION) skip the log but still reach variables. */
+  isEventMuted?: (event: string) => boolean;
 }
 
 export class RelayService extends EventEmitter {
@@ -137,7 +139,9 @@ export class RelayService extends EventEmitter {
     // Surface the raw (event, payload) for consumers like the Alerts feed, alongside the variables engine + log.
     this.emit('specterEvent', event, obj);
     this.deps.variables.handleEvent(event, obj);
-    this.deps.log.add(srcFor(event), levelFor(event), describe(event, obj));
+    // Per-word captions and similar floods would wipe the 500-line log; mute them in Live Activity instead.
+    if (this.deps.isEventMuted?.(event)) return;
+    this.deps.log.add(srcFor(event), levelFor(event), describe(event, obj), event);
   }
 
   /** Execute an inbound OBS request (public for testing). */

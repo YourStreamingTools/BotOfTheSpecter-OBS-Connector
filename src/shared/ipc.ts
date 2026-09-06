@@ -266,6 +266,59 @@ export interface AutomationInput {
 
 export type ReorderDirection = 'up' | 'down';
 
+// ---- Spinning wheels (local; not a bot API resource) ----
+export interface WheelSlice {
+  id: string;
+  label: string;
+  color: string;
+  weight: number;
+}
+
+export interface Wheel {
+  id: string;
+  name: string;
+  slices: WheelSlice[];
+  restRotationDeg: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WheelInput {
+  name: string;
+  slices: Array<{ id?: string; label: string; color?: string; weight?: number }>;
+}
+
+export interface WheelSpin {
+  wheelId: string;
+  winnerSliceId: string;
+  fromDeg: number;
+  toDeg: number;
+  startedAt: number;
+  durationMs: number;
+}
+
+export interface WheelWinner {
+  wheelId: string;
+  sliceId: string;
+  label: string;
+  at: string;
+}
+
+export interface WheelsPersist {
+  items: Wheel[];
+  activeWheelId: string | null;
+  lastWinner: WheelWinner | null;
+}
+
+export interface WheelsSnapshot {
+  wheels: Wheel[];
+  activeWheelId: string | null;
+  overlayUrl: string | null;
+  spinning: boolean;
+  spin: WheelSpin | null;
+  lastWinner: WheelWinner | null;
+}
+
 // Persisted config shape; api_key/obs_*/log_expanded/variables stay compatible with the legacy PyQt config.json.
 export interface AppConfig {
   api_key?: string;
@@ -285,8 +338,11 @@ export interface AppConfig {
   folders?: Folder[];
   automations?: Automation[];
   rewardGroups?: RewardGroup[];
+  wheels?: WheelsPersist;
   // OBS stream output count; scales the drifted outputDuration so LIVE matches wall-clock. 0/undefined = auto-detect.
   streamOutputCount?: number;
+  /** Event names hidden in Live Activity (and not written to the log). Default: CLOSED_CAPTION. */
+  activityMutedEvents?: string[];
 }
 
 // ---- OBS integration ----
@@ -413,6 +469,8 @@ export interface LogEntry {
   src: LogSource;
   level: LogLevel;
   message: string;
+  /** Websocket / OBS event name when the line came from a named event (used to mute noisy types). */
+  event?: string;
 }
 
 // Live chat line (SpecterWS CHAT_MESSAGE → Twitch EventSub channel.chat.message).
@@ -964,7 +1022,15 @@ export const IPC = {
   automationsDelete:      'automations:delete',
   automationsReorder:     'automations:reorder',
   automationsTestFire:    'automations:testFire',
-  automationsChanged:     'automations:changed'
+  automationsChanged:     'automations:changed',
+  wheelsSnapshot:         'wheels:snapshot',
+  wheelsCreate:           'wheels:create',
+  wheelsUpdate:           'wheels:update',
+  wheelsDelete:           'wheels:delete',
+  wheelsSetActive:        'wheels:setActive',
+  wheelsSpin:             'wheels:spin',
+  wheelsOpenOverlay:      'wheels:openOverlay',
+  wheelsChanged:          'wheels:changed'
 } as const;
 
 // The exact surface exposed on window.api by the preload bridge.
@@ -1108,6 +1174,15 @@ export interface BridgeApi {
     delete(id: string): Promise<boolean>;
     reorder(id: string, direction: ReorderDirection): Promise<boolean>;
     testFire(id: string): Promise<boolean>;
+  };
+  wheels: {
+    snapshot(): Promise<WheelsSnapshot>;
+    create(input: WheelInput): Promise<Wheel>;
+    update(id: string, input: WheelInput): Promise<Wheel | null>;
+    delete(id: string): Promise<boolean>;
+    setActive(id: string): Promise<boolean>;
+    spin(id?: string): Promise<WheelSpin | null>;
+    openOverlay(): Promise<string | null>;
   };
   /** Host platform from process.platform, e.g. 'win32' | 'darwin' | 'linux'. */
   platform: NodeJS.Platform;

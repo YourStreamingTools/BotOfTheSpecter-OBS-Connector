@@ -78,8 +78,9 @@ you'd otherwise juggle across OBS, Twitch, and the bot dashboard.
 ### Download a build
 
 Grab the latest release for your platform from the
-**[Releases page](https://github.com/YourStreamingTools/BotOfTheSpecter-Connector-App/releases)**,
-then launch it — no Python or other runtime required.
+**[Releases page](https://github.com/YourStreamingTools/BotOfTheSpecter-Connector-App/releases)**.
+On Windows that is a **setup** installer (`*-setup.exe`) and a **portable** exe
+(`*-portable.exe`) you can run without installing. No Python or other runtime required.
 
 ### Run from source
 

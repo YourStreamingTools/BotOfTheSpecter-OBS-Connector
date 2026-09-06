@@ -8,6 +8,9 @@ import { useTwitch } from '../state/useTwitch';
 import { computeStreamLive } from '../state/streamLive';
 import { IconEye, IconHeart, IconGift, IconCommands, IconFilter, IconDot } from '../icons';
 import type { LogSource } from '@shared/ipc';
+import {
+  collectActivityEvents, isActivityVisible, parseMutedEvents, DEFAULT_MUTED_EVENTS
+} from '@shared/activity-filter';
 
 const LOG_SOURCES: LogSource[] = ['OBS', 'TWITCH', 'WS', 'BOT', 'APP'];
 
@@ -31,13 +34,33 @@ export function ScreenDashboard() {
 
   const [filterOpen, setFilterOpen] = React.useState(false);
   const [activeSrc, setActiveSrc] = React.useState<Set<LogSource>>(() => new Set(LOG_SOURCES));
-  const filtering = activeSrc.size < LOG_SOURCES.length;
-  const shown = filtering ? log.filter((e) => activeSrc.has(e.src)) : log;
+  const [mutedEvents, setMutedEvents] = React.useState<Set<string>>(() => new Set(DEFAULT_MUTED_EVENTS));
+  React.useEffect(() => {
+    void window.api.config.get('activityMutedEvents').then((raw) => {
+      setMutedEvents(new Set(parseMutedEvents(raw)));
+    });
+  }, []);
+  const srcFiltering = activeSrc.size < LOG_SOURCES.length;
+  const filtering = srcFiltering || mutedEvents.size > 0;
+  const shown = log.filter((e) => isActivityVisible(e, activeSrc, mutedEvents));
+  const eventNames = collectActivityEvents(log);
   const toggleSrc = (s: LogSource) => setActiveSrc((prev) => {
     const next = new Set(prev);
     if (next.has(s)) next.delete(s); else next.add(s);
     return next;
   });
+  const toggleEvent = (name: string) => {
+    setMutedEvents((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      void window.api.config.set('activityMutedEvents', [...next]);
+      return next;
+    });
+  };
+  const filterHint = [
+    srcFiltering ? `${activeSrc.size}/${LOG_SOURCES.length}` : null,
+    mutedEvents.size ? `${mutedEvents.size} hidden` : null
+  ].filter(Boolean).join(' · ');
 
   // Manual session reset (for when the app wasn't open at go-live). Two-click confirm.
   const [confirmReset, setConfirmReset] = React.useState(false);
@@ -106,24 +129,38 @@ export function ScreenDashboard() {
           <div className="card-head" style={{ flexShrink: 0 }}>
             <h3>Live Activity</h3>
             <span className="chip" style={{ marginLeft: 'auto' }}>last {Math.min(shown.length, 100)} events</span>
-            <button className="btn btn-sm btn-ghost" style={{ color: filterOpen ? 'var(--text)' : undefined }}
+            <button className="btn btn-sm btn-ghost" style={{ color: filterOpen || filtering ? 'var(--text)' : undefined }}
                     onClick={() => setFilterOpen((o) => !o)}>
-              <IconFilter size={12} />Filter{filtering ? ` · ${activeSrc.size}/${LOG_SOURCES.length}` : ''}
+              <IconFilter size={12} />Filter{filterHint ? ` · ${filterHint}` : ''}
             </button>
           </div>
           {filterOpen && (
-            <div className="row" style={{ flexWrap: 'wrap', gap: 6, padding: '2px 0 10px', flexShrink: 0 }}>
-              {LOG_SOURCES.map((s) => {
-                const on = activeSrc.has(s);
-                return (
-                  <button key={s} type="button" className={`chip ${on ? 'good' : ''}`}
-                          style={{ cursor: 'pointer', opacity: on ? 1 : 0.45 }} onClick={() => toggleSrc(s)}>{s}</button>
-                );
-              })}
-              <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-                <button type="button" className="chip" style={{ cursor: 'pointer' }} onClick={() => setActiveSrc(new Set(LOG_SOURCES))}>All</button>
-                <button type="button" className="chip" style={{ cursor: 'pointer' }} onClick={() => setActiveSrc(new Set())}>None</button>
-              </span>
+            <div style={{ flexShrink: 0, padding: '2px 0 10px' }}>
+              <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
+                {LOG_SOURCES.map((s) => {
+                  const on = activeSrc.has(s);
+                  return (
+                    <button key={s} type="button" className={`chip ${on ? 'good' : ''}`}
+                            style={{ cursor: 'pointer', opacity: on ? 1 : 0.45 }} onClick={() => toggleSrc(s)}>{s}</button>
+                  );
+                })}
+                <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                  <button type="button" className="chip" style={{ cursor: 'pointer' }} onClick={() => setActiveSrc(new Set(LOG_SOURCES))}>All</button>
+                  <button type="button" className="chip" style={{ cursor: 'pointer' }} onClick={() => setActiveSrc(new Set())}>None</button>
+                </span>
+              </div>
+              <div className="row" style={{ flexWrap: 'wrap', gap: 6, marginTop: 8, alignItems: 'center' }}>
+                <span className="dim" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Hide</span>
+                {eventNames.map((name) => {
+                  const hidden = mutedEvents.has(name);
+                  return (
+                    <button key={name} type="button" className={`chip ${hidden ? 'warn' : ''}`}
+                            title={hidden ? `Hidden — ${name} will not appear in Live Activity` : `Click to hide ${name}`}
+                            style={{ cursor: 'pointer', opacity: hidden ? 1 : 0.55 }}
+                            onClick={() => toggleEvent(name)}>{name}</button>
+                  );
+                })}
+              </div>
             </div>
           )}
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>

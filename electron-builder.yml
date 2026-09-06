@@ -41,6 +41,7 @@ npmRebuild: false
 win:
   target:
     - nsis
+    - portable
   executableName: botofthespecter-desktop
   # icon omitted on purpose - auto-derived from resources/icon.png
 
@@ -52,6 +53,13 @@ nsis:
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
+
+# Single .exe, no install. Unpacks to %TEMP%\botofthespecter-desktop and reuses
+# that folder on later launches (not a fresh extract every time).
+portable:
+  artifactName: ${name}-${version}-portable.${ext}
+  unpackDirName: botofthespecter-desktop
+  requestExecutionLevel: user
 
 # ---- macOS ----
 mac:

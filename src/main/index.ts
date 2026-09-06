@@ -1,9 +1,10 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { join } from 'path';
-import { IPC, type AppConfig, type ObsConnectParams, type BuiltinCommandUpdate, type ActionInput, type FolderInput, type AutomationInput, type ReorderDirection, type TwitchStatus, type TimerInput, type RaffleInput, type PollInput, type PollEndStatus, type PredictionInput, type PredictionEndStatus, type ChannelRewardCreate, type ChannelRewardUpdate, type RewardGroupInput } from '@shared/ipc';
+import { IPC, type AppConfig, type ObsConnectParams, type BuiltinCommandUpdate, type ActionInput, type FolderInput, type AutomationInput, type ReorderDirection, type TwitchStatus, type TimerInput, type RaffleInput, type PollInput, type PollEndStatus, type PredictionInput, type PredictionEndStatus, type ChannelRewardCreate, type ChannelRewardUpdate, type RewardGroupInput, type WheelInput } from '@shared/ipc';
+import { parseMutedEvents } from '@shared/activity-filter';
 import { ConfigStore } from './config-store';
 import { legacyConfigPath, migrateLegacyConfig } from './config-migration';
-import { createMainWindow, APP_ICON_PATH } from './window';
+import { createMainWindow, APP_ICON_PATH, isSafeExternalUrl } from './window';
 import { ObsService } from './obs/obs-service';
 import { VariablesService } from './variables/variables-service';
 import { LogService } from './log/log-service';
@@ -23,6 +24,8 @@ import { PollsService } from './polls/polls-service';
 import { PredictionsService } from './predictions/predictions-service';
 import { ActionsService } from './automation/actions-service';
 import { AutomationsService } from './automation/automations-service';
+import { WheelsService } from './wheels/wheels-service';
+import { startWheelOverlay, type WheelOverlay } from './wheels/overlay-server';
 
 let store: ConfigStore;
 let obs: ObsService;
@@ -45,13 +48,15 @@ let polls: PollsService;
 let predictions: PredictionsService;
 let actions: ActionsService;
 let automations: AutomationsService;
+let wheels: WheelsService | undefined;
+let wheelOverlay: WheelOverlay | undefined;
 
 // Allow-list of persistable config keys for config:set, blocking arbitrary keys from a compromised renderer.
-// Service-owned collections (variables/actions/folders/automations) are written only via their IPC services
+// Service-owned collections (variables/actions/folders/automations/wheels) are written only via their IPC services
 // so a raw config:set cannot desync the in-memory service copy from disk.
 const CONFIG_KEYS = new Set<keyof AppConfig>([
   'api_key', 'obs_host', 'obs_port', 'obs_password', 'autoConnectObs', 'log_expanded',
-  'theme', 'density', 'sidebarExpanded', 'streamOutputCount'
+  'theme', 'density', 'sidebarExpanded', 'streamOutputCount', 'activityMutedEvents'
 ]);
 
 function broadcast(channel: string, payload: unknown): void {
@@ -125,7 +130,10 @@ function registerObs(): void {
 function registerRelay(): void {
   variables = new VariablesService(store);
   logs = new LogService();
-  relay = new RelayService({ obs, variables, log: logs });
+  relay = new RelayService({
+    obs, variables, log: logs,
+    isEventMuted: (event) => parseMutedEvents(store.get('activityMutedEvents')).includes(event)
+  });
 
   variables.on('changed', () => broadcast(IPC.variablesChanged, variables.all()));
   logs.on('line', (e) => broadcast(IPC.logLine, e));
@@ -349,6 +357,27 @@ function registerAutomations(): void {
   ipcMain.handle(IPC.automationsTestFire, (_e, id: string) => automations.testFireAutomation(id));
 }
 
+function registerWheels(): WheelsService {
+  const svc = new WheelsService({ store });
+  wheels = svc;
+  svc.on('changed', (snap) => {
+    broadcast(IPC.wheelsChanged, snap);
+    wheelOverlay?.broadcast(snap);
+  });
+  ipcMain.handle(IPC.wheelsSnapshot, () => svc.snapshot());
+  ipcMain.handle(IPC.wheelsCreate, (_e, input: WheelInput) => svc.create(input));
+  ipcMain.handle(IPC.wheelsUpdate, (_e, id: string, input: WheelInput) => svc.update(id, input));
+  ipcMain.handle(IPC.wheelsDelete, (_e, id: string) => svc.delete(id));
+  ipcMain.handle(IPC.wheelsSetActive, (_e, id: string) => svc.setActive(id));
+  ipcMain.handle(IPC.wheelsSpin, (_e, id?: string) => svc.spin(id));
+  ipcMain.handle(IPC.wheelsOpenOverlay, () => {
+    const url = svc.snapshot().overlayUrl;
+    if (url && isSafeExternalUrl(url)) void shell.openExternal(url);
+    return url;
+  });
+  return svc;
+}
+
 async function bootstrap(): Promise<void> {
   // macOS dock icon (Windows/Linux taskbar use BrowserWindow.icon); in dev this avoids the generic Electron mascot.
   if (process.platform === 'darwin' && app.dock) {
@@ -374,6 +403,13 @@ async function bootstrap(): Promise<void> {
   registerPredictions();
   registerActions();
   registerAutomations();
+  const wheelsSvc = registerWheels();
+  try {
+    wheelOverlay = await startWheelOverlay(() => wheelsSvc.snapshot());
+    wheelsSvc.setOverlayUrl(wheelOverlay.url);
+  } catch (err) {
+    logs.add('APP', 'warn', `Wheel overlay not started: ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   const host = store.get('obs_host');
   const port = store.get('obs_port');
@@ -411,6 +447,11 @@ async function bootstrap(): Promise<void> {
 }
 
 app.whenReady().then(bootstrap);
+
+app.on('before-quit', () => {
+  wheels?.dispose();
+  wheelOverlay?.close();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

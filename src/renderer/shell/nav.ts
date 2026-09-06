@@ -2,7 +2,7 @@ import React from 'react';
 import {
   IconDashboard, IconOBS, IconChat, IconAlerts, IconCommands, IconSoundboard,
   IconMusic, IconTimers, IconGiveaway, IconPoints, IconLogs, IconSettings,
-  IconBolt,
+  IconBolt, IconWheel,
   type IconProps
 } from '../icons';
 import { Placeholder } from '../screens/Placeholder';
@@ -20,10 +20,11 @@ import { ScreenSoundboard } from '../screens/Soundboard';
 import { ScreenTimers } from '../screens/Timers';
 import { ScreenGiveaways } from '../screens/Giveaways';
 import { ScreenAlerts } from '../screens/Alerts';
+import { ScreenWheels } from '../screens/Wheels';
 
 export type ScreenId =
   | 'dashboard' | 'obs' | 'chat' | 'alerts'
-  | 'commands' | 'sound' | 'music' | 'timers' | 'giveaways' | 'points'
+  | 'commands' | 'sound' | 'music' | 'timers' | 'giveaways' | 'wheels' | 'points'
   | 'automation' | 'actions'
   | 'variables' | 'logs' | 'settings';
 
@@ -54,6 +55,7 @@ export const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { id: 'music', label: 'Song Requests', icon: IconMusic },
       { id: 'timers', label: 'Timers', icon: IconTimers },
       { id: 'giveaways', label: 'Giveaways', icon: IconGiveaway },
+      { id: 'wheels', label: 'Wheels', icon: IconWheel },
       { id: 'points', label: 'Channel Points', icon: IconPoints }
     ]
   },
@@ -84,6 +86,7 @@ export const SCREEN_TITLES: Record<ScreenId, { t: string; s: string }> = {
   music: { t: 'Song Requests', s: 'Spotify and !song queue' },
   timers: { t: 'Timers', s: 'Auto-messages on a schedule' },
   giveaways: { t: 'Giveaways', s: 'Polls, predictions and giveaways' },
+  wheels: { t: 'Wheels', s: 'Spinning wheels for on-stream choices' },
   points: { t: 'Channel Points', s: 'Twitch reward redemptions and actions' },
   automation: { t: 'Automation', s: 'Connect triggers to actions' },
   actions: { t: 'Actions', s: 'Reusable building blocks for automations' },
@@ -107,5 +110,6 @@ export const SCREENS: Record<ScreenId, { component: React.ComponentType }> = {
   sound: { component: ScreenSoundboard },
   music: { component: () => React.createElement(Placeholder, { title: 'Song Requests', icon: IconMusic, hint: 'Spotify queue and chat-driven !songrequest. Needs the music backend.' }) },
   timers: { component: ScreenTimers },
-  giveaways: { component: ScreenGiveaways }
+  giveaways: { component: ScreenGiveaways },
+  wheels: { component: ScreenWheels }
 };

@@ -144,6 +144,15 @@ const api: BridgeApi = {
     reorder:  (id, direction) => ipcRenderer.invoke(IPC.automationsReorder, id, direction),
     testFire: (id) => ipcRenderer.invoke(IPC.automationsTestFire, id)
   },
+  wheels: {
+    snapshot:    () => ipcRenderer.invoke(IPC.wheelsSnapshot),
+    create:      (input) => ipcRenderer.invoke(IPC.wheelsCreate, input),
+    update:      (id, input) => ipcRenderer.invoke(IPC.wheelsUpdate, id, input),
+    delete:      (id) => ipcRenderer.invoke(IPC.wheelsDelete, id),
+    setActive:   (id) => ipcRenderer.invoke(IPC.wheelsSetActive, id),
+    spin:        (id) => ipcRenderer.invoke(IPC.wheelsSpin, id),
+    openOverlay: () => ipcRenderer.invoke(IPC.wheelsOpenOverlay)
+  },
   platform: process.platform,
   on: (channel, listener) => {
     // Only allow subscribing to known IPC channels, never an arbitrary renderer-supplied name.

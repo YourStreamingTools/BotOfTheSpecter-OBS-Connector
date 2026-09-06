@@ -38,4 +38,23 @@ describe('Dashboard Live Activity filter', () => {
     fireEvent.click(screen.getByRole('button', { name: /click again to reset/i }));
     expect(window.api.variables.resetSession).toHaveBeenCalledTimes(1);
   });
+
+  it('hides CLOSED_CAPTION by default and shows it when the Hide chip is toggled off', async () => {
+    window.api.logs = {
+      snapshot: vi.fn().mockResolvedValue([
+        { t: '00:00:01', src: 'BOT', level: 'info', message: 'CLOSED_CAPTION', event: 'CLOSED_CAPTION' },
+        { t: '00:00:02', src: 'BOT', level: 'ok', message: 'Executed inbound OBS request' }
+      ])
+    };
+    render(<ScreenDashboard />);
+    expect(await screen.findByText('Executed inbound OBS request')).toBeInTheDocument();
+    expect(screen.queryByText('CLOSED_CAPTION')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /^filter/i }));
+    expect(screen.getByRole('button', { name: 'CLOSED_CAPTION' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'CLOSED_CAPTION' }));
+
+    expect(screen.getAllByText('CLOSED_CAPTION').length).toBeGreaterThan(1);
+    expect(window.api.config.set).toHaveBeenCalledWith('activityMutedEvents', []);
+  });
 });

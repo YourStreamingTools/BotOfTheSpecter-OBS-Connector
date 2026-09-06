@@ -40,4 +40,10 @@ describe('LogService', () => {
     log.add('OBS', 'evt', 'hi');
     expect(log.export()).toMatch(/OBS\s+EVT\s+hi/);
   });
+
+  it('stores an optional event name for mute filtering', () => {
+    const log = new LogService();
+    log.add('BOT', 'info', 'CLOSED_CAPTION', 'CLOSED_CAPTION');
+    expect(log.snapshot()[0].event).toBe('CLOSED_CAPTION');
+  });
 });

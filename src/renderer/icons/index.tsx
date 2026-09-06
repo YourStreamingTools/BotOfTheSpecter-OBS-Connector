@@ -60,6 +60,13 @@ export const IconTimers = (p: IconProps) => (
 export const IconGiveaway = (p: IconProps) => (
   <Icon {...p}><rect x="3" y="8" width="18" height="5" rx="1" /><path d="M5 13v8h14v-8M12 8v13M7.5 8a2.5 2.5 0 0 1 0-5c1.5 0 3 2 4.5 5-3 0-4.5 0-4.5 0ZM16.5 8a2.5 2.5 0 0 0 0-5c-1.5 0-3 2-4.5 5 3 0 4.5 0 4.5 0Z" /></Icon>
 );
+export const IconWheel = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="12" cy="13" r="8" />
+    <path d="M12 13 L12 5 M12 13 L18.5 9.5 M12 13 L17.5 18 M12 13 L6.5 18 M12 13 L5.5 9.5" />
+    <path d="M10 2.5 L14 2.5 L12 5.5 Z" fill="currentColor" stroke="none" />
+  </Icon>
+);
 export const IconPoints = (p: IconProps) => (
   <Icon {...p}><circle cx="12" cy="12" r="9" /><path d="M12 7v10M9 9h4.5a2 2 0 0 1 0 4H9M9 13h5a2 2 0 0 1 0 4H9" /></Icon>
 );

@@ -129,6 +129,19 @@ if (typeof window !== 'undefined') {
       reorder: vi.fn().mockResolvedValue(true),
       testFire: vi.fn().mockResolvedValue(true)
     },
+    wheels: {
+      snapshot: vi.fn().mockResolvedValue({
+        wheels: [], activeWheelId: null, overlayUrl: null, spinning: false, spin: null, lastWinner: null
+      }),
+      create: vi.fn().mockResolvedValue({
+        id: 'whl_x', name: 'Wheel', slices: [], restRotationDeg: 0, createdAt: '', updatedAt: ''
+      }),
+      update: vi.fn().mockResolvedValue(null),
+      delete: vi.fn().mockResolvedValue(true),
+      setActive: vi.fn().mockResolvedValue(true),
+      spin: vi.fn().mockResolvedValue(null),
+      openOverlay: vi.fn().mockResolvedValue(null)
+    },
     platform: 'win32',
     on: vi.fn().mockReturnValue(() => {})
   };

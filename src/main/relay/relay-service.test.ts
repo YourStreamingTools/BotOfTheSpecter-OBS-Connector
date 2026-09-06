@@ -14,14 +14,15 @@ class FakeSocket extends EventEmitter {
   fireAny(event: string, data: unknown) { this._any?.(event, data); }
 }
 
-const makeDeps = () => {
+const makeDeps = (over: { isEventMuted?: (event: string) => boolean } = {}) => {
   const socket = new FakeSocket();
   const obs = { setScene: vi.fn().mockResolvedValue(undefined), setSourceEnabled: vi.fn().mockResolvedValue(undefined) };
   const variables = { handleEvent: vi.fn() };
   const log = { add: vi.fn() };
   const svc = new RelayService({
     socketFactory: () => socket as unknown as import('socket.io-client').Socket,
-    obs: obs as never, variables: variables as never, log: log as never, getVersion: () => '2.0.0'
+    obs: obs as never, variables: variables as never, log: log as never, getVersion: () => '2.0.0',
+    ...over
   });
   return { socket, obs, variables, log, svc };
 };
@@ -82,6 +83,15 @@ describe('RelayService', () => {
     d.socket.fireAny('TWITCH_FOLLOW', { username: 'owl' });
     expect(d.variables.handleEvent).toHaveBeenCalledWith('TWITCH_FOLLOW', { username: 'owl' });
     expect(d.log.add).toHaveBeenCalled();
+  });
+
+  it('skips the event log for muted high-volume events but still updates variables', () => {
+    const muted = makeDeps({ isEventMuted: (event) => event === 'CLOSED_CAPTION' });
+    muted.svc.setApiKey('KEY');
+    muted.svc.connect(); muted.socket.connect();
+    muted.socket.fireAny('CLOSED_CAPTION', { text: 'hello' });
+    expect(muted.variables.handleEvent).toHaveBeenCalledWith('CLOSED_CAPTION', { text: 'hello' });
+    expect(muted.log.add).not.toHaveBeenCalledWith('BOT', 'info', 'CLOSED_CAPTION', 'CLOSED_CAPTION');
   });
 
   it('redacts secrets from event payloads before they reach variables or logs', () => {
